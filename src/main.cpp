@@ -74,10 +74,14 @@ public:
     // Keys are two-letter strings (e.g. "MI", "II", "DD", etc.).
     std::vector<std::unordered_map<std::string, double>> m_t{};
 
-    auto get_best_trans(DPMatrix& dp, std::size_t j, std::size_t i, State to) const -> DPCell {
+    auto load(const std::string& path) {
+    }
+
+    auto getBestTrans(DPMatrix& dp, std::size_t j, std::size_t i, State to) const -> DPCell {
         constexpr std::array<State, 3> states{State::M, State::I, State::D};
 
         DPCell bestCell;
+        bestCell.state = to;
 
         for (const State s : states) {
             auto& prevCell = dp(j, i, s);
@@ -96,33 +100,6 @@ public:
 
         return bestCell;
     }
-
-    /*
-        auto get_best_trans(DPMatrix& dp, std::size_t j, std::size_t i) -> std::vector<std::string> {
-
-            double bestScore = NEG_INF;
-            DPCell* bestPrev = nullptr;
-            std::size_t prev_j = j - 1;
-            for (State s : {State::M, State::I, State::D}) {
-                auto& prevCell = dp(prev_j, i, s);
-                // Transition key depends on previous state: e.g., from M, key "MD"
-                std::string key = (s == State::M) ? "MD" : (s == State::I) ? "ID" : "DD";
-                double trans = NEG_INF;
-                if (auto it = m_t[prev_j].find(key); it != m_t[prev_j].end())
-                    trans = it->second;
-                double candidate = prevCell.score + trans;
-                if (candidate > bestScore) {
-                    bestScore = candidate;
-                    bestPrev = &prevCell;
-                }
-            }
-            DPCell& cell = dp(j, i, State::D);
-            cell.score = bestScore;
-            cell.prev = bestPrev;
-            cell.state = State::D;
-            cell.alignedChar = '-';    // deletion: output gap
-        }
-    */
 
     // Viterbi returns a pair: best log-score and an alignment string.
     // In the alignment string, uppercase letters are matches, lowercase letters are insertions, and '-' is a
@@ -167,15 +144,17 @@ public:
                     */
 
                     std::size_t prev_j = j - 1;
-                    auto thing = get_best_trans(dp, prev_j, i, State::D);
+                    auto thing = getBestTrans(dp, prev_j, i, State::D);
                     //                    assert(thing.score == bestScore);
                     //                    assert(thing.prev == bestPrev);
 
                     DPCell& cell = dp(j, i, State::D);
-                    cell.score = thing.score;
-                    cell.prev = thing.prev;
-                    cell.state = State::D;
+                    cell = thing;
                     cell.alignedChar = '-';    // deletion: output gap
+//                    cell.score = thing.score;
+//                    cell.prev = thing.prev;
+//                    cell.state = State::D;
+//                    cell.alignedChar = '-';    // deletion: output gap
                 }
 
                 // --- Insertion (I) ---
@@ -196,7 +175,7 @@ public:
                                     }
                                 }*/
 
-                    auto thing = get_best_trans(dp, j, i - 1, State::I);
+                    auto thing = getBestTrans(dp, j, i - 1, State::I);
                     /*                    assert(thing.score == bestScore);
                                         assert(thing.prev == bestPrev);*/
 
@@ -210,10 +189,11 @@ public:
 
                     DPCell& cell = dp(j, i, State::I);
 
-                    cell.score = thing.score;
-                    cell.prev = thing.prev;
-                    cell.state = State::I;
+                    cell = thing;
                     cell.alignedChar = std::tolower(query[i - 1]);
+//                    cell.score = thing.score;
+//                    cell.prev = thing.prev;
+//                    cell.state = State::I;
                     /*                    cell.score = bestScore;
                                         cell.prev = bestPrev;
                                         cell.state = State::I;
@@ -243,7 +223,7 @@ public:
 
                     std::size_t prev_j = j - 1;
                     std::size_t prev_i = i - 1;
-                    auto thing = get_best_trans(dp, prev_j, prev_i, State::M);
+                    auto thing = getBestTrans(dp, prev_j, prev_i, State::M);
                     //                        assert(thing.score == bestScore);
                     //                        assert(thing.prev == bestPrev);
 
@@ -256,11 +236,10 @@ public:
                     thing.score += emission;
 
                     DPCell& cell = dp(j, i, State::M);
-                    cell.score = thing.score;
-                    cell.prev = thing.prev;
-                    //                    cell.score = bestScore;
-                    //                    cell.prev = bestPrev;
-                    cell.state = State::M;
+                    cell = thing;
+//                    cell.score = thing.score;
+//                    cell.prev = thing.prev;
+//                    cell.state = State::M;
                     // Match: output the query letter in uppercase.
                     cell.alignedChar = std::toupper(query[i - 1]);
                 }
@@ -283,7 +262,7 @@ public:
                     }
                 }*/
 
-        auto last = get_best_trans(dp, K, L, State::M);
+        auto last = getBestTrans(dp, K, L, State::M);
         //        assert(last.score == finalScore);
         //        assert(last.prev == finalCell);
 
