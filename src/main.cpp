@@ -125,123 +125,48 @@ public:
                 // --- Deletion (D) ---
                 // Deletion: move from (j-1, i) to (j, i) without consuming a query char.
                 if (j > 0) {
-                    /*
-                                        double bestScore = NEG_INF;
-                                        DPCell* bestPrev = nullptr;
-                                        std::size_t prev_j = j - 1;
-                                        for (State s : {State::M, State::I, State::D}) {
-                                            auto& prevCell = dp(prev_j, i, s);
-                                            // Transition key depends on previous state: e.g., from M, key "MD"
-                                            std::string key = (s == State::M) ? "MD" : (s == State::I) ? "ID" : "DD";
-                                            double trans = NEG_INF;
-                                            if (auto it = m_t[prev_j].find(key); it != m_t[prev_j].end())
-                                                trans = it->second;
-                                            double candidate = prevCell.score + trans;
-                                            if (candidate > bestScore) {
-                                                bestScore = candidate;
-                                                bestPrev = &prevCell;
-                                            }
-                                        }
-
-                    */
-
                     std::size_t prev_j = j - 1;
                     auto thing = getBestTrans(dp, prev_j, i, State::D);
-                    //                    assert(thing.score == bestScore);
-                    //                    assert(thing.prev == bestPrev);
-
                     DPCell& cell = dp(j, i, State::D);
                     cell = thing;
                     cell.alignedChar = '-';    // deletion: output gap
-                                               //                    cell.score = thing.score;
-                                               //                    cell.prev = thing.prev;
-                                               //                    cell.state = State::D;
-                                               //                    cell.alignedChar = '-';    // deletion: output gap
                 }
 
                 // --- Insertion (I) ---
                 // Insertion: move from (j, i-1) to (j, i) while consuming one query character.
                 if (i > 0 && j <= K) {
-                    /*            double bestScore = NEG_INF;
-                                DPCell* bestPrev = nullptr;
-                                for (State s : {State::M, State::I, State::D}) {
-                                    const DPCell& prevCell = dp(j, i - 1, s);
-                                    std::string key = (s == State::M) ? "MI" : (s == State::I) ? "II" : "DI";
-                                    double trans = NEG_INF;
-                                    if (auto it = m_t[j].find(key); it != m_t[j].end())
-                                        trans = it->second;
-                                    double candidate = prevCell.score + trans;
-                                    if (candidate > bestScore) {
-                                        bestScore = candidate;
-                                        bestPrev = const_cast<DPCell*>(&prevCell);
-                                    }
-                                }*/
 
                     auto thing = getBestTrans(dp, j, i - 1, State::I);
-                    /*                    assert(thing.score == bestScore);
-                                        assert(thing.prev == bestPrev);*/
 
                     // Add emission cost for insertion from m_eI[j]
                     std::string letter(1, query[i - 1]);
                     double emission = NEG_INF;
                     if (auto it = m_eI[j].find(letter); it != m_eI[j].end())
                         emission = it->second;
-                    //                    bestScore += emission;
                     thing.score += emission;
 
                     DPCell& cell = dp(j, i, State::I);
 
                     cell = thing;
                     cell.alignedChar = std::tolower(query[i - 1]);
-                    //                    cell.score = thing.score;
-                    //                    cell.prev = thing.prev;
-                    //                    cell.state = State::I;
-                    /*                    cell.score = bestScore;
-                                        cell.prev = bestPrev;
-                                        cell.state = State::I;
-                                        // Insertion: output the query letter in lowercase.
-                                        cell.alignedChar = std::tolower(query[i - 1]);*/
                 }
 
                 // --- Match (M) ---
                 // Match: move from (j-1, i-1) to (j, i) while consuming one query character.
                 if (j > 0 && i > 0) {
-                    /*               double bestScore = NEG_INF;
-                                   DPCell* bestPrev = nullptr;
-                                   std::size_t prev_j = j - 1;
-                                   std::size_t prev_i = i - 1;
-                                   for (State s : {State::M, State::I, State::D}) {
-                                       const DPCell& prevCell = dp(prev_j, prev_i, s);
-                                       std::string key = (s == State::M) ? "MM" : (s == State::I) ? "IM" : "DM";
-                                       double trans = NEG_INF;
-                                       if (auto it = m_t[prev_j].find(key); it != m_t[prev_j].end())
-                                           trans = it->second;
-                                       double candidate = prevCell.score + trans;
-                                       if (candidate > bestScore) {
-                                           bestScore = candidate;
-                                           bestPrev = const_cast<DPCell*>(&prevCell);
-                                       }
-                                   }*/
-
                     std::size_t prev_j = j - 1;
                     std::size_t prev_i = i - 1;
                     auto thing = getBestTrans(dp, prev_j, prev_i, State::M);
-                    //                        assert(thing.score == bestScore);
-                    //                        assert(thing.prev == bestPrev);
 
                     // Add emission cost for match from m_eM[j]
                     std::string letter(1, query[i - 1]);
                     double emission = NEG_INF;
                     if (auto it = m_eM[j].find(letter); it != m_eM[j].end())
                         emission = it->second;
-                    //                    bestScore += emission;
                     thing.score += emission;
 
                     DPCell& cell = dp(j, i, State::M);
                     cell = thing;
-                    //                    cell.score = thing.score;
-                    //                    cell.prev = thing.prev;
-                    //                    cell.state = State::M;
                     // Match: output the query letter in uppercase.
                     cell.alignedChar = std::toupper(query[i - 1]);
                 }
@@ -249,25 +174,7 @@ public:
         }
 
         // --- Final transition ---
-        /*        double finalScore = NEG_INF;
-                DPCell* finalCell = nullptr;
-                for (State s : {State::M, State::I, State::D}) {
-                    const DPCell& cell = dp(K, L, s);
-                    std::string key = (s == State::M) ? "MM" : (s == State::I) ? "IM" : "DM";
-                    double trans = NEG_INF;
-                    if (auto it = m_t[K].find(key); it != m_t[K].end())
-                        trans = it->second;
-                    double candidate = cell.score + trans;
-                    if (candidate > finalScore) {
-                        finalScore = candidate;
-                        finalCell = const_cast<DPCell*>(&cell);
-                    }
-                }*/
-
-        auto last = getBestTrans(dp, K, L, State::M);
-        //        assert(last.score == finalScore);
-        //        assert(last.prev == finalCell);
-
+         auto last = getBestTrans(dp, K, L, State::M);
         if (last.score == NEG_INF || last.prev == nullptr)
             return {NEG_INF, "$"};
 
