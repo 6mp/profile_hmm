@@ -146,7 +146,7 @@ public:
                     auto thing = getBestTrans(dp, j, prev_i, State::I, std::tolower(query[i - 1]));
 
                     // Add emission cost for insertion from m_eI[j]
-                    const auto letter = query[i - 1];
+                    const auto letter = query[prev_i];
 
                     // will throw if letter doesnt exist, shouldnt happen
                     thing.score += m_eI[j].find(letter)->second;
@@ -164,7 +164,7 @@ public:
                     auto thing = getBestTrans(dp, prev_j, prev_i, State::M, std::toupper(query[i - 1]));
 
                     // Add emission cost for match from m_eM[j]
-                    const auto letter = query[i - 1];
+                    const auto letter = query[prev_i];
 
                     // will throw if letter doesnt exist
                     thing.score += m_eM[j].find(letter)->second;
