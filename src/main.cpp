@@ -51,7 +51,7 @@ private:
         // since the state is an enum with number assigned 0, 1, 2 it can be used to access each cell
         return ((j * m_cols) + i) * 3 + static_cast<std::size_t>(s);
     }
-    std::size_t m_rows;
+    std::size_t m_rows; // dont need to acc store this
     std::size_t m_cols;
     std::vector<DPCell> data;
 };
@@ -74,9 +74,11 @@ public:
     // Keys are two-letter strings (e.g. "MI", "II", "DD", etc.).
     std::vector<std::unordered_map<std::string, double>> m_t{};
 
-    auto load(const std::string& path) {
-    }
+    auto load(const std::string& path) {}
 
+    // Given a previous cell (j, i, s), find the best transition to state 'to'.
+    // Returns the best DPCell for state 'to'.
+    // still have to add the emission cost and aligned char bc those are specific to the state
     auto getBestTrans(DPMatrix& dp, std::size_t j, std::size_t i, State to) const -> DPCell {
         constexpr std::array<State, 3> states{State::M, State::I, State::D};
 
@@ -151,10 +153,10 @@ public:
                     DPCell& cell = dp(j, i, State::D);
                     cell = thing;
                     cell.alignedChar = '-';    // deletion: output gap
-//                    cell.score = thing.score;
-//                    cell.prev = thing.prev;
-//                    cell.state = State::D;
-//                    cell.alignedChar = '-';    // deletion: output gap
+                                               //                    cell.score = thing.score;
+                                               //                    cell.prev = thing.prev;
+                                               //                    cell.state = State::D;
+                                               //                    cell.alignedChar = '-';    // deletion: output gap
                 }
 
                 // --- Insertion (I) ---
@@ -191,9 +193,9 @@ public:
 
                     cell = thing;
                     cell.alignedChar = std::tolower(query[i - 1]);
-//                    cell.score = thing.score;
-//                    cell.prev = thing.prev;
-//                    cell.state = State::I;
+                    //                    cell.score = thing.score;
+                    //                    cell.prev = thing.prev;
+                    //                    cell.state = State::I;
                     /*                    cell.score = bestScore;
                                         cell.prev = bestPrev;
                                         cell.state = State::I;
@@ -237,9 +239,9 @@ public:
 
                     DPCell& cell = dp(j, i, State::M);
                     cell = thing;
-//                    cell.score = thing.score;
-//                    cell.prev = thing.prev;
-//                    cell.state = State::M;
+                    //                    cell.score = thing.score;
+                    //                    cell.prev = thing.prev;
+                    //                    cell.state = State::M;
                     // Match: output the query letter in uppercase.
                     cell.alignedChar = std::toupper(query[i - 1]);
                 }
@@ -274,11 +276,9 @@ public:
         // to reconstruct the alignment string.
         std::string alignment;
         for (DPCell* cell = last.prev; cell->prev != nullptr; cell = cell->prev) {
-            // Only match or insertion cells contribute a query letter;
-            // deletions contribute a gap.
             alignment.push_back(cell->alignedChar);
         }
-        std::reverse(alignment.begin(), alignment.end());
+        std::ranges::reverse(alignment);
         return {last.score, alignment};
     }
 };
@@ -289,39 +289,57 @@ public:
 int main() {
     HMM hmm;
     // For this example we assume three match states.
-    hmm.m_nStates = 1;
+    // Set number of states.
+    hmm.m_nStates = 4;
+
+    // Set alphabet.
     hmm.m_alphabet = {"A", "C", "G", "T"};
+
+    // Set insertion emission probabilities (eI) for states 0 to 4.
     hmm.m_eI = {
+        {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}},
+        {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}},
+        {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}},
         {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}},
         {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}}
     };
+
+    // Set match emission probabilities (eM), with the first map left empty.
     hmm.m_eM = {
         {},
-        {{"A", -0.0}, {"C", NEG_INF}, {"G", NEG_INF}, {"T", NEG_INF}}
-    };
-    hmm.m_t = {
-        {{"MM", -0.693},
-         {"MD", NEG_INF},
-         {"MI", -0.693},
-         {"IM", -0.105},
-         {"II", -2.303},
-         {"ID", NEG_INF},
-         {"DM", -0.0},
-         {"DI", NEG_INF},
-         {"DD", NEG_INF}},
-        {{"MM", -0.0},
-         {"MD", NEG_INF},
-         {"MI", NEG_INF},
-         {"IM", -0.0},
-         {"II", NEG_INF},
-         {"ID", NEG_INF},
-         {"DM", -0.0},
-         {"DI", NEG_INF},
-         {"DD", NEG_INF}}
+        {{"A", -0.693}, {"C", -1.204}, {"G", -2.303}, {"T", -2.303}},
+        {{"A", -0.693}, {"C", -1.204}, {"G", -2.303}, {"T", -2.303}},
+        {{"A", -0.693}, {"C", -1.204}, {"G", -2.303}, {"T", -2.303}},
+        {{"A", -0.693}, {"C", -1.204}, {"G", -2.303}, {"T", -2.303}}
     };
 
+    // Set transition probabilities (t) for rows 0 to 4.
+    hmm.m_t = {
+        {
+            {"MM", -0.357}, {"MD", -1.897}, {"MI", -1.897}, {"IM", -0.223},
+            {"II", -1.897}, {"ID", -2.996}, {"DM", -0.0}, {"DI", NEG_INF}, {"DD", NEG_INF}
+        },
+        {
+            {"MM", -0.357}, {"MD", -1.897}, {"MI", -1.897}, {"IM", -0.223},
+            {"II", -1.897}, {"ID", -2.996}, {"DM", -0.288}, {"DI", NEG_INF}, {"DD", -1.386}
+        },
+        {
+            {"MM", -0.357}, {"MD", -1.897}, {"MI", -1.897}, {"IM", -0.223},
+            {"II", -1.897}, {"ID", -2.996}, {"DM", -0.288}, {"DI", NEG_INF}, {"DD", -1.386}
+        },
+        {
+            {"MM", -0.357}, {"MD", -1.897}, {"MI", -1.897}, {"IM", -0.223},
+            {"II", -1.897}, {"ID", -2.996}, {"DM", -0.288}, {"DI", NEG_INF}, {"DD", -1.386}
+        },
+        {
+            {"MM", -0.163}, {"MD", NEG_INF}, {"MI", -1.897}, {"IM", -0.163},
+            {"II", -1.897}, {"ID", NEG_INF}, {"DM", -0.0}, {"DI", NEG_INF}, {"DD", NEG_INF}
+        }
+    };
+
+
     // Example query sequence.
-    std::string query = "CA";
+    std::string query = "A";
     auto [score, alignment] = hmm.viterbi(query);
     std::cout << "Score: " << score << '\n';
     std::cout << "Alignment: " << alignment << '\n';
