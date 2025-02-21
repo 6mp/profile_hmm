@@ -51,9 +51,17 @@ private:
         // since the state is an enum with number assigned 0, 1, 2 it can be used to access each cell
         return ((j * m_cols) + i) * 3 + static_cast<std::size_t>(s);
     }
-    std::size_t m_rows; // dont need to acc store this
+    std::size_t m_rows;    // dont need to acc store this
     std::size_t m_cols;
     std::vector<DPCell> data;
+};
+
+// might use this later
+class Transition {
+public:
+    State from;
+    State to;
+    double score;
 };
 
 //
@@ -64,26 +72,27 @@ private:
 //
 class HMM {
 public:
-    std::size_t m_nStates{};                  // number of match states (K)
-    std::vector<std::string> m_alphabet{};    // e.g. {"A", "C", "G", "T"}
+    std::size_t m_nStates{};           // number of match states (K)
+    std::vector<char> m_alphabet{};    // e.g. {"A", "C", "G", "T"}
     // Emission probabilities for insertions; size: m_nStates+1.
-    std::vector<std::unordered_map<std::string, double>> m_eI{};
+    std::vector<std::unordered_map<char, double>> m_eI{};
     // Emission probabilities for match states; size: m_nStates+1 (index 0 may be unused)
-    std::vector<std::unordered_map<std::string, double>> m_eM{};
+    std::vector<std::unordered_map<char, double>> m_eM{};
     // Transition probabilities; one unordered_map per row (0..m_nStates).
     // Keys are two-letter strings (e.g. "MI", "II", "DD", etc.).
     std::vector<std::unordered_map<std::string, double>> m_t{};
 
     auto load(const std::string& path) {}
 
-    // Given a previous cell (j, i, s), find the best transition to state 'to'.
+    // Given a previous cell (j, i), find the best transition to state 'to'.
     // Returns the best DPCell for state 'to'.
     // still have to add the emission cost and aligned char bc those are specific to the state
-    auto getBestTrans(DPMatrix& dp, std::size_t j, std::size_t i, State to) const -> DPCell {
+    auto getBestTrans(DPMatrix& dp, std::size_t j, std::size_t i, State to, char alignedChar) const -> DPCell {
         constexpr std::array<State, 3> states{State::M, State::I, State::D};
 
         DPCell bestCell;
         bestCell.state = to;
+        bestCell.alignedChar = alignedChar;
 
         for (const State s : states) {
             auto& prevCell = dp(j, i, s);
@@ -93,9 +102,8 @@ public:
             if (auto it = m_t[j].find(transKey); it != m_t[j].end()) {
                 double candidate = prevCell.score + it->second;
                 if (candidate > bestCell.score) {
-                    //                    bestCell = prevCell;
                     bestCell.score = candidate;
-                    bestCell.prev = (&prevCell);
+                    bestCell.prev = &prevCell;
                 }
             }
         }
@@ -126,29 +134,24 @@ public:
                 // Deletion: move from (j-1, i) to (j, i) without consuming a query char.
                 if (j > 0) {
                     std::size_t prev_j = j - 1;
-                    auto thing = getBestTrans(dp, prev_j, i, State::D);
-                    DPCell& cell = dp(j, i, State::D);
-                    cell = thing;
-                    cell.alignedChar = '-';    // deletion: output gap
+                    dp(j, i, State::D) = getBestTrans(dp, prev_j, i, State::D, '-');
+                    // no emission cost to add in
                 }
 
                 // --- Insertion (I) ---
                 // Insertion: move from (j, i-1) to (j, i) while consuming one query character.
                 if (i > 0 && j <= K) {
 
-                    auto thing = getBestTrans(dp, j, i - 1, State::I);
+                    std::size_t prev_i = i - 1;
+                    auto thing = getBestTrans(dp, j, prev_i, State::I, std::tolower(query[i - 1]));
 
                     // Add emission cost for insertion from m_eI[j]
-                    std::string letter(1, query[i - 1]);
-                    double emission = NEG_INF;
-                    if (auto it = m_eI[j].find(letter); it != m_eI[j].end())
-                        emission = it->second;
-                    thing.score += emission;
+                    const auto letter = query[i - 1];
 
-                    DPCell& cell = dp(j, i, State::I);
+                    // will throw if letter doesnt exist, shouldnt happen
+                    thing.score += m_eI[j].find(letter)->second;
 
-                    cell = thing;
-                    cell.alignedChar = std::tolower(query[i - 1]);
+                    dp(j, i, State::I) = thing;
                 }
 
                 // --- Match (M) ---
@@ -156,25 +159,25 @@ public:
                 if (j > 0 && i > 0) {
                     std::size_t prev_j = j - 1;
                     std::size_t prev_i = i - 1;
-                    auto thing = getBestTrans(dp, prev_j, prev_i, State::M);
+
+                    // idk if i actually have to do toupper here cause query should be in all caps
+                    auto thing = getBestTrans(dp, prev_j, prev_i, State::M, std::toupper(query[i - 1]));
 
                     // Add emission cost for match from m_eM[j]
-                    std::string letter(1, query[i - 1]);
-                    double emission = NEG_INF;
-                    if (auto it = m_eM[j].find(letter); it != m_eM[j].end())
-                        emission = it->second;
-                    thing.score += emission;
+                    const auto letter = query[i - 1];
 
-                    DPCell& cell = dp(j, i, State::M);
-                    cell = thing;
-                    // Match: output the query letter in uppercase.
-                    cell.alignedChar = std::toupper(query[i - 1]);
+                    // will throw if letter doesnt exist
+                    thing.score += m_eM[j].find(letter)->second;
+
+                    dp(j, i, State::M) = thing;
                 }
             }
         }
 
         // --- Final transition ---
-         auto last = getBestTrans(dp, K, L, State::M);
+
+        // just null termin for aligned char it doesnt matter this is gonna get skipped in backtracking
+        auto last = getBestTrans(dp, K, L, State::M, '\0');
         if (last.score == NEG_INF || last.prev == nullptr)
             return {NEG_INF, "$"};
 
@@ -200,53 +203,76 @@ int main() {
     hmm.m_nStates = 4;
 
     // Set alphabet.
-    hmm.m_alphabet = {"A", "C", "G", "T"};
+    hmm.m_alphabet = {'A', 'C', 'G', 'T'};
 
-    // Set insertion emission probabilities (eI) for states 0 to 4.
     hmm.m_eI = {
-        {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}},
-        {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}},
-        {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}},
-        {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}},
-        {{"A", -1.386}, {"C", -1.386}, {"G", -1.386}, {"T", -1.386}}
+        {{'A', -1.386}, {'C', -1.386}, {'G', -1.386}, {'T', -1.386}},
+        {{'A', -1.386}, {'C', -1.386}, {'G', -1.386}, {'T', -1.386}},
+        {{'A', -1.386}, {'C', -1.386}, {'G', -1.386}, {'T', -1.386}},
+        {{'A', -1.386}, {'C', -1.386}, {'G', -1.386}, {'T', -1.386}},
+        {{'A', -1.386}, {'C', -1.386}, {'G', -1.386}, {'T', -1.386}}
     };
 
-    // Set match emission probabilities (eM), with the first map left empty.
     hmm.m_eM = {
         {},
-        {{"A", -0.693}, {"C", -1.204}, {"G", -2.303}, {"T", -2.303}},
-        {{"A", -0.693}, {"C", -1.204}, {"G", -2.303}, {"T", -2.303}},
-        {{"A", -0.693}, {"C", -1.204}, {"G", -2.303}, {"T", -2.303}},
-        {{"A", -0.693}, {"C", -1.204}, {"G", -2.303}, {"T", -2.303}}
+        {{'A', -0.693}, {'C', -1.204}, {'G', -2.303}, {'T', -2.303}},
+        {{'A', -0.693}, {'C', -1.204}, {'G', -2.303}, {'T', -2.303}},
+        {{'A', -0.693}, {'C', -1.204}, {'G', -2.303}, {'T', -2.303}},
+        {{'A', -0.693}, {'C', -1.204}, {'G', -2.303}, {'T', -2.303}}
     };
+    ;
 
     // Set transition probabilities (t) for rows 0 to 4.
     hmm.m_t = {
-        {
-            {"MM", -0.357}, {"MD", -1.897}, {"MI", -1.897}, {"IM", -0.223},
-            {"II", -1.897}, {"ID", -2.996}, {"DM", -0.0}, {"DI", NEG_INF}, {"DD", NEG_INF}
-        },
-        {
-            {"MM", -0.357}, {"MD", -1.897}, {"MI", -1.897}, {"IM", -0.223},
-            {"II", -1.897}, {"ID", -2.996}, {"DM", -0.288}, {"DI", NEG_INF}, {"DD", -1.386}
-        },
-        {
-            {"MM", -0.357}, {"MD", -1.897}, {"MI", -1.897}, {"IM", -0.223},
-            {"II", -1.897}, {"ID", -2.996}, {"DM", -0.288}, {"DI", NEG_INF}, {"DD", -1.386}
-        },
-        {
-            {"MM", -0.357}, {"MD", -1.897}, {"MI", -1.897}, {"IM", -0.223},
-            {"II", -1.897}, {"ID", -2.996}, {"DM", -0.288}, {"DI", NEG_INF}, {"DD", -1.386}
-        },
-        {
-            {"MM", -0.163}, {"MD", NEG_INF}, {"MI", -1.897}, {"IM", -0.163},
-            {"II", -1.897}, {"ID", NEG_INF}, {"DM", -0.0}, {"DI", NEG_INF}, {"DD", NEG_INF}
-        }
+        {{"MM", -0.357},
+         {"MD", -1.897},
+         {"MI", -1.897},
+         {"IM", -0.223},
+         {"II", -1.897},
+         {"ID", -2.996},
+         {"DM", -0.0},
+         {"DI", NEG_INF},
+         {"DD", NEG_INF}},
+        {{"MM", -0.357},
+         {"MD", -1.897},
+         {"MI", -1.897},
+         {"IM", -0.223},
+         {"II", -1.897},
+         {"ID", -2.996},
+         {"DM", -0.288},
+         {"DI", NEG_INF},
+         {"DD", -1.386} },
+        {{"MM", -0.357},
+         {"MD", -1.897},
+         {"MI", -1.897},
+         {"IM", -0.223},
+         {"II", -1.897},
+         {"ID", -2.996},
+         {"DM", -0.288},
+         {"DI", NEG_INF},
+         {"DD", -1.386} },
+        {{"MM", -0.357},
+         {"MD", -1.897},
+         {"MI", -1.897},
+         {"IM", -0.223},
+         {"II", -1.897},
+         {"ID", -2.996},
+         {"DM", -0.288},
+         {"DI", NEG_INF},
+         {"DD", -1.386} },
+        {{"MM", -0.163},
+         {"MD", NEG_INF},
+         {"MI", -1.897},
+         {"IM", -0.163},
+         {"II", -1.897},
+         {"ID", NEG_INF},
+         {"DM", -0.0},
+         {"DI", NEG_INF},
+         {"DD", NEG_INF}}
     };
 
-
     // Example query sequence.
-    std::string query = "A";
+    std::string query = "ACGTACG";
     auto [score, alignment] = hmm.viterbi(query);
     std::cout << "Score: " << score << '\n';
     std::cout << "Alignment: " << alignment << '\n';
