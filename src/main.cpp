@@ -127,7 +127,7 @@ public:
         dp(0, 0, State::M).state = State::M;
 
         // Fill in the DP table.
-        for (std::size_t j = 0; j <= K; ++j) {
+        for (std::size_t j = 0; j <= K; ++j) {    // possible kernel in here to do like 3 at a time
             for (std::size_t i = 0; i <= L; ++i) {
 
                 // --- Deletion (D) ---
@@ -143,7 +143,7 @@ public:
                 if (i > 0 && j <= K) {
 
                     std::size_t prev_i = i - 1;
-                    auto thing = getBestTrans(dp, j, prev_i, State::I, std::tolower(query[i - 1]));
+                    auto thing = getBestTrans(dp, j, prev_i, State::I, std::tolower(query[prev_i]));
 
                     // Add emission cost for insertion from m_eI[j]
                     const auto letter = query[prev_i];
@@ -161,7 +161,7 @@ public:
                     std::size_t prev_i = i - 1;
 
                     // idk if i actually have to do toupper here cause query should be in all caps
-                    auto thing = getBestTrans(dp, prev_j, prev_i, State::M, std::toupper(query[i - 1]));
+                    auto thing = getBestTrans(dp, prev_j, prev_i, State::M, std::toupper(query[prev_i]));
 
                     // Add emission cost for match from m_eM[j]
                     const auto letter = query[prev_i];
@@ -185,10 +185,11 @@ public:
         // Now, follow the pointer chain (each cell stores its alignedChar)
         // to reconstruct the alignment string.
         std::string alignment;
-        for (DPCell* cell = last.prev; cell->prev != nullptr; cell = cell->prev) {
-            alignment.push_back(cell->alignedChar);
+        alignment.resize(L); // alignment gonna be the same size as the query so pre alloc
+        std::size_t pos = L - 1; // inserting from end of string to front so no reverse needed
+        for (const DPCell* cell = last.prev; cell->prev != nullptr; cell = cell->prev) {
+            alignment[pos--] = cell->alignedChar;
         }
-        std::ranges::reverse(alignment);
         return {last.score, alignment};
     }
 };
