@@ -58,7 +58,6 @@ struct DPCell {
 
 // so a vm[j][i] would be at index (j * m_cols) + i in the 1d one then to account for the 3 in one add on the enum val
 
-
 // or could do one matrix for each vm vi vd
 class DPMatrix {
 public:
@@ -143,7 +142,6 @@ public:
                 }
             }
         }
-
 
         // just null termin for aligned char it doesnt matter this is gonna get skipped in backtracking
         auto last = getBestTrans(dp, K, L, State::M, '\0');
@@ -291,8 +289,43 @@ private:
     }
 };
 
+auto readFasta(const std::string& path) {
+    std::ifstream fin(path);
+    if (!fin) {
+        throw std::runtime_error("Unable to open file: " + path);
+    }
+    std::unordered_map<std::string, std::string> seqs;
+    std::string line;
+    std::string name;
+    std::string seq;
+
+    while (std::getline(fin, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        if (line[0] == '>') {
+            if (!name.empty()) {
+                seqs[name] = seq;
+            }
+            name = line.substr(1);
+            seq.clear();
+        } else {
+            seq += line;
+        }
+    }
+
+    if (!name.empty()) {
+        seqs[name] = seq;
+    }
+
+    return seqs;
+}
+
 int main(int argc, const char* argv[]) {
-/*
+
+    readFasta("../examples/test1/queries.fas");
+
+    return 0;
 
     argparse::ArgumentParser program("profile_hmm_cpp");
     program.add_argument("-m", "--model").required().help("HMM model file path");
@@ -323,9 +356,8 @@ int main(int argc, const char* argv[]) {
         return 1;
     }
 
-    auto queries = read_FASTA(ifs);
+//    auto queries = read_FASTA(ifs);
 
-*/
     HMM hmm1("../examples/test3/model.hmm");
 
     // Example query sequence.
