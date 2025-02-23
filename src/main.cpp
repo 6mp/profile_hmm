@@ -2,11 +2,14 @@
 #include <cctype>
 #include <iostream>
 #include <limits>
+#include <fstream>
 #include <string>
+#include <ranges>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 #include <cassert>
+#include <sstream>
 
 constexpr double NEG_INF = -std::numeric_limits<double>::infinity();
 
@@ -17,7 +20,7 @@ constexpr auto state_to_symbol(State s) -> char { return (s == State::M) ? 'M' :
 // put the larger things first to minimize padding
 struct DPCell {
     double score = NEG_INF;
-    DPCell* prev = nullptr;    // pointer to previous DPCell for backtracking
+    const DPCell* prev = nullptr;    // pointer to previous DPCell for backtracking
     State state = State::M;
     char alignedChar = '\0';    // char for building alignment string
 
@@ -82,12 +85,78 @@ public:
     // Keys are two-letter strings (e.g. "MI", "II", "DD", etc.).
     std::vector<std::unordered_map<std::string, double>> m_t{};
 
-    auto load(const std::string& path) {}
+    void load(const std::string& path) {
+        std::ifstream fin(path);
+        if (!fin) {
+            throw std::runtime_error("Unable to open file: " + path);
+        }
+
+        // equal to this: stream = line.strip().split()
+        auto split = [](const std::string& s) {
+            std::vector<std::string> tokens;
+            std::istringstream iss(s);
+            std::copy(
+                std::istream_iterator<std::string>(iss),
+                std::istream_iterator<std::string>(),
+                std::back_inserter(tokens));
+            return tokens;
+        };
+
+        std::string line;
+        while (std::getline(fin, line)) {
+            const auto tokens = split(line);
+
+            // read len
+            if (tokens[0] == "LENG") {
+                m_nStates = std::stoul(tokens[1]);
+            }
+
+            if (tokens[0] == "HMM") {
+                // read alphabest stream[1:]
+                m_alphabet = std::vector(tokens.begin() + 1, tokens.end()) |
+                             std::views::transform([](const auto& s) { return s[0]; }) |
+                             std::ranges::to<std::vector<char>>();
+
+                // read transition order
+                std::getline(fin, line);
+                const auto split_trans_order = split(line);
+                const auto trans_order = split_trans_order | std::views::take(4) |
+                                         std::ranges::to<std::vector<std::string>>() |
+                                         std::views::transform([](const auto& s) { return std::string{s[0], s[3]}; }) |
+                                         std::ranges::to<std::vector<std::string>>();
+
+                // read the next line, if it is the COMPO line then ignore it and read one more line
+
+                std::getline(fin, line);
+                const auto split_compo = split(line);
+                if (split_compo[0] == "COMPO") {
+                    std::getline(fin, line);
+                }
+
+                const auto split_io_states = split(line);
+
+                // # now the stream should be at the I0 state; read the emission of the I0 state
+                for (const auto& [x, y] : std::views::zip(m_alphabet, split_io_states)) {
+                    m_eI[0][x] = -std::stod(y);
+                }
+
+                // now the stream should be at the B state; read in the transition probability
+
+                std::getline(fin, line);
+                const auto split_trans_real = split(line);
+                // make the trans map be a to->from for each symbol and have it default contrcutoed to -INF so when i do
+                // the [] operator if its not there itll just set it to nothing
+
+
+
+            }
+        }
+    }
 
     // Given a previous cell (j, i), find the best transition to state 'to'.
     // Returns the best DPCell for state 'to'.
     // still have to add the emission cost and aligned char bc those are specific to the state
-    auto getBestTrans(DPMatrix& dp, std::size_t j, std::size_t i, State to, char alignedChar) const -> DPCell {
+    auto getBestTrans(const DPMatrix& dp, std::size_t j, std::size_t i, State to, char alignedChar) const -> DPCell {
         constexpr std::array<State, 3> states{State::M, State::I, State::D};
 
         DPCell bestCell;
@@ -95,7 +164,7 @@ public:
         bestCell.alignedChar = alignedChar;
 
         for (const State s : states) {
-            auto& prevCell = dp(j, i, s);
+            const auto& prevCell = dp(j, i, s);
             auto transKey = prevCell.getTransToKey(to);
 
             // make sure transition exists, if not skip bc -inf + anything is irrelevant
@@ -181,12 +250,10 @@ public:
         if (last.score == NEG_INF || last.prev == nullptr)
             return {NEG_INF, "$"};
 
-        // --- Backtracking ---
-        // Now, follow the pointer chain (each cell stores its alignedChar)
-        // to reconstruct the alignment string.
+        // just following pointer chain backwards
         std::string alignment;
-        alignment.resize(L); // alignment gonna be the same size as the query so pre alloc
-        std::size_t pos = L - 1; // inserting from end of string to front so no reverse needed
+        alignment.resize(L);        // alignment gonna be the same size as the query so pre alloc
+        std::size_t pos = L - 1;    // inserting from end of string to front so no reverse needed
         for (const DPCell* cell = last.prev; cell->prev != nullptr; cell = cell->prev) {
             alignment[pos--] = cell->alignedChar;
         }
@@ -194,13 +261,12 @@ public:
     }
 };
 
-//
-// Example usage:
-//
 int main() {
+
     HMM hmm;
-    // For this example we assume three match states.
-    // Set number of states.
+
+    hmm.load("../examples/test1/model.hmm");
+
     hmm.m_nStates = 4;
 
     // Set alphabet.
