@@ -13,6 +13,39 @@
 
 constexpr double NEG_INF = -std::numeric_limits<double>::infinity();
 
+struct BetterDouble {
+    BetterDouble(double value)
+        : value(value) {};
+    BetterDouble()
+        : value(NEG_INF) {};
+    operator double() const { return value; }
+    operator double&() { return value; }
+    /*    auto operator=(double value) -> BetterDouble& {
+            this->value = value;
+            return *this;
+        }
+        auto operator=(BetterDouble value) -> BetterDouble& {
+            this->value = value.value;
+            return *this;
+        }
+            auto operator+=(double value) -> BetterDouble& {
+                    this->value += value;
+                    return *this;
+            }
+            auto operator+=(BetterDouble value) -> BetterDouble& {
+                    this->value += value.value;
+                    return *this;
+            }
+            auto operator+(double value) -> BetterDouble { return BetterDouble(this->value + value); }
+
+            auto operator+(BetterDouble value) -> BetterDouble { return BetterDouble(this->value + value.value); }
+
+            auto operator-(double value) -> BetterDouble { return BetterDouble(this->value - value); }
+
+            auto operator-(BetterDouble value) -> BetterDouble { return BetterDouble(this->value - value.value); }*/
+    double value;
+};
+
 enum class State : std::size_t { M = 0, I = 1, D = 2 };
 
 constexpr auto state_to_symbol(State s) -> char { return (s == State::M) ? 'M' : (s == State::I) ? 'I' : 'D'; };
@@ -76,7 +109,7 @@ public:
 class HMM {
 public:
     explicit HMM(const std::string& path) {
-//        this->m_eM.emplace_back(std::pair<char, double>{'k', .1});
+        //        this->m_eM.emplace_back(std::pair<char, double>{'k', .1});
         load(path);
     }
 
@@ -88,7 +121,7 @@ public:
     std::vector<std::unordered_map<char, double>> m_eM{};
     // Transition probabilities; one unordered_map per row (0..m_nStates).
     // Keys are two-letter strings (e.g. "MI", "II", "DD", etc.).
-    std::vector<std::unordered_map<std::string, double>> m_t{};
+    std::vector<std::unordered_map<std::string, BetterDouble>> m_t{};
 
     void load(const std::string& path) {
         std::ifstream fin(path);
@@ -134,8 +167,9 @@ public:
                 // read transition order
                 std::getline(fin, line);
                 const auto split_trans_order = split(line);
-                trans_order = split_trans_order | std::views::take(4) | std::ranges::to<std::vector<std::string>>() |
-                              std::views::transform([](const auto& s) { return std::string{s[0], s[3]}; }) |
+
+                trans_order = split_trans_order |
+                              std::views::transform([](const auto& x) { return std::string{x[0], x[3]}; }) |
                               std::ranges::to<std::vector<std::string>>();
 
                 // read the next line, if it is the COMPO line then ignore it and read one more line
@@ -156,7 +190,8 @@ public:
                 // the [] operator if its not there itll just set it to nothing
 
                 for (const auto& [x, y] : std::views::zip(trans_order, split(line))) {
-                    m_t[0].insert_or_assign(x, y == "*" ? NEG_INF : -std::stod(y));
+                    //                    m_t[0].insert_or_assign(toUpperString(x), y == "*" ? NEG_INF : -std::stod(y));
+                    m_t[0][toUpperString(x)] = y == "*" ? NEG_INF : -std::stod(y);
                 }
 
                 break;
@@ -177,13 +212,15 @@ public:
 
             std::getline(fin, line);
             for (const auto& [x, y] : std::views::zip(m_alphabet, split(line))) {
-                m_eI[idx].insert_or_assign(x, y == "*" ? NEG_INF : -std::stod(y));
+                //                m_eI[idx].insert_or_assign(x, y == "*" ? NEG_INF : -std::stod(y));
+                m_eI[idx][x] = y == "*" ? NEG_INF : -std::stod(y);
             }
 
             std::getline(fin, line);
 
             for (const auto& [x, y] : std::views::zip(trans_order, split(line))) {
-                m_t[idx].insert_or_assign(x, y == "*" ? NEG_INF : -std::stod(y));
+                //                m_t[idx].insert_or_assign(toUpperString(x), y == "*" ? NEG_INF : -std::stod(y));
+                m_t[idx][toUpperString(x)] = y == "*" ? NEG_INF : -std::stod(y);
             }
         }
     }
@@ -191,7 +228,8 @@ public:
     // Given a previous cell (j, i), find the best transition to state 'to'.
     // Returns the best DPCell for state 'to'.
     // still have to add the emission cost and aligned char bc those are specific to the state
-    [[nodiscard]] auto getBestTrans(const DPMatrix& dp, std::size_t j, std::size_t i, State to, char alignedChar) const -> DPCell {
+    [[nodiscard]] auto getBestTrans(const DPMatrix& dp, std::size_t j, std::size_t i, State to, char alignedChar)
+        -> DPCell {
         constexpr std::array<State, 3> states{State::M, State::I, State::D};
 
         DPCell bestCell;
@@ -200,16 +238,24 @@ public:
 
         for (const State s : states) {
             const auto& prevCell = dp(j, i, s);
-            auto transKey = prevCell.getTransToKey(to);
+            const auto transKey = prevCell.getTransToKey(to);
 
-            // make sure transition exists, if not skip bc -inf + anything is irrelevant
-            if (auto it = m_t[j].find(transKey); it != m_t[j].end()) {
-                double candidate = prevCell.score + it->second;
-                if (candidate > bestCell.score) {
-                    bestCell.score = candidate;
-                    bestCell.prev = &prevCell;
-                }
+            //            auto bruh = m_t[j];
+            //            auto thing = bruh[transKey];
+            double candidate = prevCell.score + m_t[j][transKey];
+            if (candidate > bestCell.score) {
+                bestCell.score = candidate;
+                bestCell.prev = &prevCell;
             }
+
+            /*           // make sure transition exists, if not skip bc -inf + anything is irrelevant
+                       if (auto it = m_t[j].find(transKey); it != m_t[j].end()) {
+                           double candidate = prevCell.score + it->second;
+                           if (candidate > bestCell.score) {
+                               bestCell.score = candidate;
+                               bestCell.prev = &prevCell;
+                           }
+                       }*/
         }
 
         return bestCell;
@@ -218,7 +264,7 @@ public:
     // Viterbi returns a pair: best log-score and an alignment string.
     // In the alignment string, uppercase letters are matches, lowercase letters are insertions, and '-' is a
     // deletion.
-    [[nodiscard]] auto viterbi(std::string_view query) const -> std::pair<double, std::string> {
+    [[nodiscard]] auto viterbi(std::string_view query) -> std::pair<double, std::string> {
         const std::size_t L = query.size();
         const std::size_t K = m_nStates;
 
@@ -296,17 +342,94 @@ public:
     }
 };
 
+// Function to compare two unordered_maps
+template<typename K, typename V>
+bool compare_maps(const std::unordered_map<K, V>& map1, const std::unordered_map<K, V>& map2) {
+    /*    if (map1.size() != map2.size()) {
+            return false;
+        }*/
+    for (const auto& [key, value] : map1) {
+        if (map2.find(key) == map2.end() || std::abs(map2.at(key) - value) > 1e-6) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Function to compare the HMM data structures
+void compare_hmm(const HMM& actual, const HMM& expected) {
+    bool discrepancies_found = false;
+
+    // Compare m_nStates
+    if (actual.m_nStates != expected.m_nStates) {
+        std::cout << "Discrepancy in m_nStates: actual = " << actual.m_nStates << ", expected = " << expected.m_nStates
+                  << '\n';
+        discrepancies_found = true;
+    }
+
+    // Compare m_alphabet
+    if (actual.m_alphabet != expected.m_alphabet) {
+        std::cout << "Discrepancy in m_alphabet\n";
+        discrepancies_found = true;
+    }
+
+    // Compare m_eI
+    if (actual.m_eI.size() != expected.m_eI.size()) {
+        std::cout << "Discrepancy in m_eI size\n";
+        discrepancies_found = true;
+    } else {
+        for (std::size_t i = 0; i < actual.m_eI.size(); ++i) {
+            if (!compare_maps(actual.m_eI[i], expected.m_eI[i])) {
+                std::cout << "Discrepancy in m_eI at index " << i << '\n';
+                discrepancies_found = true;
+            }
+        }
+    }
+
+    // Compare m_eM
+    if (actual.m_eM.size() != expected.m_eM.size()) {
+        std::cout << "Discrepancy in m_eM size\n";
+        discrepancies_found = true;
+    } else {
+        for (std::size_t i = 0; i < actual.m_eM.size(); ++i) {
+            if (!compare_maps(actual.m_eM[i], expected.m_eM[i])) {
+                std::cout << "Discrepancy in m_eM at index " << i << '\n';
+                discrepancies_found = true;
+            }
+        }
+    }
+
+    // Compare m_t
+    if (actual.m_t.size() != expected.m_t.size()) {
+        std::cout << "Discrepancy in m_t size\n";
+        discrepancies_found = true;
+    } else {
+        for (std::size_t i = 0; i < actual.m_t.size(); ++i) {
+            if (!compare_maps(actual.m_t[i], expected.m_t[i])) {
+                std::cout << "Discrepancy in m_t at index " << i << '\n';
+                discrepancies_found = true;
+            }
+        }
+    }
+
+    if (!discrepancies_found) {
+        std::cout << "No discrepancies found.\n";
+    }
+}
+
 int main() {
 
-    HMM hmm("../examples/test3/model.hmm");
+    HMM hmm1("../examples/test3/model.hmm");
 
-//    hmm.load("../examples/test1/model.hmm");
+    //    hmm.load("../examples/test1/model.hmm");
 
     // Example query sequence.
     std::string query = "ACGTACG";
-    auto [score, alignment] = hmm.viterbi(query);
+    auto [score, alignment] = hmm1.viterbi(query);
     std::cout << "Score: " << score << '\n';
     std::cout << "Alignment: " << alignment << '\n';
+
+    HMM hmm("../examples/test3/model.hmm");
 
     hmm.m_nStates = 4;
 
@@ -379,9 +502,12 @@ int main() {
          {"DD", NEG_INF}}
     };
 
-    /*    // Example query sequence.
-        std::string query = "ACGTACG";
-        auto [score, alignment] = hmm.viterbi(query);
-        std::cout << "Score: " << score << '\n';
-        std::cout << "Alignment: " << alignment << '\n';*/
+    // Compare the HMM data structures.
+    compare_hmm(hmm1, hmm);
+
+    // Example query sequence.
+    std::string query1 = "ACGTACG";
+    auto [score1, alignment1] = hmm.viterbi(query);
+    std::cout << "Score: " << score1 << '\n';
+    std::cout << "Alignment: " << alignment1 << '\n';
 }
