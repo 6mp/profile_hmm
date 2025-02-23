@@ -75,6 +75,11 @@ public:
 //
 class HMM {
 public:
+    explicit HMM(const std::string& path) {
+//        this->m_eM.emplace_back(std::pair<char, double>{'k', .1});
+        load(path);
+    }
+
     std::size_t m_nStates{};           // number of match states (K)
     std::vector<char> m_alphabet{};    // e.g. {"A", "C", "G", "T"}
     // Emission probabilities for insertions; size: m_nStates+1.
@@ -102,6 +107,12 @@ public:
             return tokens;
         };
 
+        auto toUpperString = [](std::string& s) {
+            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::toupper(c); });
+            return s;
+        };
+
+        std::vector<std::string> trans_order;
         std::string line;
         while (std::getline(fin, line)) {
             const auto tokens = split(line);
@@ -109,6 +120,9 @@ public:
             // read len
             if (tokens[0] == "LENG") {
                 m_nStates = std::stoul(tokens[1]);
+                m_eI.resize(m_nStates + 1);
+                m_eM.resize(m_nStates + 1);
+                m_t.resize(m_nStates + 1);
             }
 
             if (tokens[0] == "HMM") {
@@ -120,35 +134,56 @@ public:
                 // read transition order
                 std::getline(fin, line);
                 const auto split_trans_order = split(line);
-                const auto trans_order = split_trans_order | std::views::take(4) |
-                                         std::ranges::to<std::vector<std::string>>() |
-                                         std::views::transform([](const auto& s) { return std::string{s[0], s[3]}; }) |
-                                         std::ranges::to<std::vector<std::string>>();
+                trans_order = split_trans_order | std::views::take(4) | std::ranges::to<std::vector<std::string>>() |
+                              std::views::transform([](const auto& s) { return std::string{s[0], s[3]}; }) |
+                              std::ranges::to<std::vector<std::string>>();
 
                 // read the next line, if it is the COMPO line then ignore it and read one more line
-
                 std::getline(fin, line);
                 const auto split_compo = split(line);
                 if (split_compo[0] == "COMPO") {
                     std::getline(fin, line);
                 }
 
-                const auto split_io_states = split(line);
-
                 // # now the stream should be at the I0 state; read the emission of the I0 state
-                for (const auto& [x, y] : std::views::zip(m_alphabet, split_io_states)) {
-                    m_eI[0][x] = -std::stod(y);
+                for (const auto [x, y] : std::views::zip(m_alphabet, split(line))) {
+                    m_eI[0].insert_or_assign(x, -std::stod(y));
                 }
 
                 // now the stream should be at the B state; read in the transition probability
-
                 std::getline(fin, line);
-                const auto split_trans_real = split(line);
                 // make the trans map be a to->from for each symbol and have it default contrcutoed to -INF so when i do
                 // the [] operator if its not there itll just set it to nothing
 
+                for (const auto& [x, y] : std::views::zip(trans_order, split(line))) {
+                    m_t[0].insert_or_assign(x, y == "*" ? NEG_INF : -std::stod(y));
+                }
 
+                break;
+            }
+        }
 
+        for (std::size_t idx = 1; idx < m_nStates + 1; ++idx) {
+            // read each set of 3 lines at a time
+            std::getline(fin, line);
+            const auto split_em = split(line);
+            if (std::stod(split_em[0]) != idx) {
+                throw std::runtime_error("Expected state index " + std::to_string(idx) + " but got " + split_em[0]);
+            }
+
+            for (const auto& [x, y] : std::views::zip(m_alphabet, split_em | std::views::drop(1))) {
+                m_eM[idx][x] = y == "*" ? NEG_INF : -std::stod(y);
+            }
+
+            std::getline(fin, line);
+            for (const auto& [x, y] : std::views::zip(m_alphabet, split(line))) {
+                m_eI[idx].insert_or_assign(x, y == "*" ? NEG_INF : -std::stod(y));
+            }
+
+            std::getline(fin, line);
+
+            for (const auto& [x, y] : std::views::zip(trans_order, split(line))) {
+                m_t[idx].insert_or_assign(x, y == "*" ? NEG_INF : -std::stod(y));
             }
         }
     }
@@ -156,7 +191,7 @@ public:
     // Given a previous cell (j, i), find the best transition to state 'to'.
     // Returns the best DPCell for state 'to'.
     // still have to add the emission cost and aligned char bc those are specific to the state
-    auto getBestTrans(const DPMatrix& dp, std::size_t j, std::size_t i, State to, char alignedChar) const -> DPCell {
+    [[nodiscard]] auto getBestTrans(const DPMatrix& dp, std::size_t j, std::size_t i, State to, char alignedChar) const -> DPCell {
         constexpr std::array<State, 3> states{State::M, State::I, State::D};
 
         DPCell bestCell;
@@ -263,9 +298,15 @@ public:
 
 int main() {
 
-    HMM hmm;
+    HMM hmm("../examples/test3/model.hmm");
 
-    hmm.load("../examples/test1/model.hmm");
+//    hmm.load("../examples/test1/model.hmm");
+
+    // Example query sequence.
+    std::string query = "ACGTACG";
+    auto [score, alignment] = hmm.viterbi(query);
+    std::cout << "Score: " << score << '\n';
+    std::cout << "Alignment: " << alignment << '\n';
 
     hmm.m_nStates = 4;
 
@@ -338,9 +379,9 @@ int main() {
          {"DD", NEG_INF}}
     };
 
-    // Example query sequence.
-    std::string query = "ACGTACG";
-    auto [score, alignment] = hmm.viterbi(query);
-    std::cout << "Score: " << score << '\n';
-    std::cout << "Alignment: " << alignment << '\n';
+    /*    // Example query sequence.
+        std::string query = "ACGTACG";
+        auto [score, alignment] = hmm.viterbi(query);
+        std::cout << "Score: " << score << '\n';
+        std::cout << "Alignment: " << alignment << '\n';*/
 }
