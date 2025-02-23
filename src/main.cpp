@@ -335,12 +335,19 @@ std::vector<std::pair<std::string, std::string>> readFasta(const std::string& fi
     return sequences;
 }
 
+
+std::string truncate_zeros(double num, int precision) {
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(precision) << num;
+    std::string s = ss.str();
+    s.erase(s.find_last_not_of('0') + 1, std::string::npos);
+    if (s.back() == '.') {
+        s.pop_back();
+    }
+    return s;
+}
+
 int main(int argc, const char* argv[]) {
-
-    //    readFasta("../examples/test1/queries.fas");
-
-    //    return 0;
-
     argparse::ArgumentParser program("profile_hmm_cpp");
     program.add_argument("-m", "--model").required().help("HMM model file path");
     program.add_argument("-q", "--query").required().help("Query FASTA file path");
@@ -379,7 +386,7 @@ int main(int argc, const char* argv[]) {
         }
         for (const auto& [name, query] : queries) {
             auto [score, alignment] = hmm.viterbi(query);
-            fout << name << " " << std::fixed << std::setprecision(3) << score << " " << alignment << "\n";
+            fout << name << " " << truncate_zeros(score, 5) << " " << alignment << "\n";
         }
     }
 }
