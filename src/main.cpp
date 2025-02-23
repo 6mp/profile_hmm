@@ -314,7 +314,6 @@ std::vector<std::pair<std::string, std::string>> readFasta(const std::string& fi
     };
 
     while (std::getline(file, line)) {
-        //        line = trim(line); // Assume trim function exists as previously defined
         if (line.empty())
             continue;
 
@@ -326,7 +325,7 @@ std::vector<std::pair<std::string, std::string>> readFasta(const std::string& fi
         }
     }
 
-    process_current();    // Add the last sequence
+    process_current();
 
     if (sequences.empty()) {
         throw std::runtime_error("Malformed FASTA: No sequences found");
@@ -336,6 +335,7 @@ std::vector<std::pair<std::string, std::string>> readFasta(const std::string& fi
 }
 
 
+// round like python
 std::string truncate_zeros(double num, int precision) {
     std::stringstream ss;
     ss << std::fixed << std::setprecision(precision) << num;
@@ -367,10 +367,10 @@ int main(int argc, const char* argv[]) {
     const auto outputFile = program.get<std::string>("--output");
     const auto modelFile = program.get<std::string>("--model");
 
-    // Create and load the HMM.
+    // create and load the HMM.
     HMM hmm(modelFile);
 
-    // Open the FASTA query file.
+    // open the FASTA query file.
     auto queries = readFasta(queryFile);
 
     if (outputFile == "stdout") {
