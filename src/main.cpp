@@ -9,6 +9,8 @@
 #include <sstream>
 #include <argparse/argparse.hpp>
 
+// https://en.cppreference.com/w/
+
 constexpr double NEG_INF = -std::numeric_limits<double>::infinity();
 
 // lets me do map lookups without having to handle failure cases
@@ -46,8 +48,11 @@ struct DPCell {
 // next state its easy to look back since its all contiguous
 // [m_0, i_0, d_0, m_1, i_1, d_1, m_2, i_2, d_2, ...]
 
-// if it wasnt 1d it would look like this
-// [[m_0, i_0, d_0], [m_1, i_1, d_1], [m_2, i_2, d_2], ...]
+// if it wasnt 1d it would look like this where each row is a state
+
+
+
+// or could do one matrix for each vm vi vd
 class DPMatrix {
 public:
     // Storing it all in a 1d array
@@ -249,7 +254,6 @@ private:
             }
 
             std::getline(fin, line);
-
             for (const auto& [x, y] : std::views::zip(trans_order, split(line))) {
                 m_t[idx][x] = y == "*" ? NEG_INF : -std::stod(y);
             }
