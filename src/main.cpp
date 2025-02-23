@@ -1,54 +1,30 @@
-#include <algorithm>
 #include <cctype>
 #include <iostream>
 #include <limits>
 #include <fstream>
 #include <string>
 #include <ranges>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
-#include <cassert>
 #include <sstream>
+#include <argparse/argparse.hpp>
 
 constexpr double NEG_INF = -std::numeric_limits<double>::infinity();
 
-struct BetterDouble {
-    BetterDouble(double value)
+// lets me do map lookups without having to handle failure cases
+// nolint the explicit constructor since its intentional
+struct DefaultDouble {
+    DefaultDouble(double value)    // NOLINT(*-explicit-constructor)
         : value(value) {};
-    BetterDouble()
+    DefaultDouble()
         : value(NEG_INF) {};
-    operator double() const { return value; }
-    operator double&() { return value; }
-    /*    auto operator=(double value) -> BetterDouble& {
-            this->value = value;
-            return *this;
-        }
-        auto operator=(BetterDouble value) -> BetterDouble& {
-            this->value = value.value;
-            return *this;
-        }
-            auto operator+=(double value) -> BetterDouble& {
-                    this->value += value;
-                    return *this;
-            }
-            auto operator+=(BetterDouble value) -> BetterDouble& {
-                    this->value += value.value;
-                    return *this;
-            }
-            auto operator+(double value) -> BetterDouble { return BetterDouble(this->value + value); }
+    operator double() const { return value; }    // NOLINT(*-explicit-constructor)
+    operator double&() { return value; }         // NOLINT(*-explicit-constructor)
 
-            auto operator+(BetterDouble value) -> BetterDouble { return BetterDouble(this->value + value.value); }
-
-            auto operator-(double value) -> BetterDouble { return BetterDouble(this->value - value); }
-
-            auto operator-(BetterDouble value) -> BetterDouble { return BetterDouble(this->value - value.value); }*/
     double value;
 };
 
 enum class State : std::size_t { M = 0, I = 1, D = 2 };
-
-constexpr auto state_to_symbol(State s) -> char { return (s == State::M) ? 'M' : (s == State::I) ? 'I' : 'D'; };
 
 // put the larger things first to minimize padding
 struct DPCell {
@@ -60,6 +36,10 @@ struct DPCell {
     [[nodiscard]] auto getTransToKey(State to) const -> std::string {
         return {state_to_symbol(state), state_to_symbol(to)};
     }
+
+    static constexpr auto state_to_symbol(State s) -> char {
+        return (s == State::M) ? 'M' : (s == State::I) ? 'I' : 'D';
+    };
 };
 
 // memory layout for cache, reason why is to compute the
@@ -76,52 +56,110 @@ public:
         , m_cols(cols)
         , data(rows * cols * 3) {}
 
-    auto operator()(const std::size_t j, const std::size_t i, const State s) -> DPCell& { return data[index(j, i, s)]; }
-    const DPCell& operator()(const std::size_t j, const std::size_t i, const State s) const {
+    auto operator[](const std::size_t j, const std::size_t i, const State s) -> DPCell& { return data[index(j, i, s)]; }
+    auto operator[](const std::size_t j, const std::size_t i, const State s) const -> const DPCell& {
         return data[index(j, i, s)];
     }
 
 private:
     [[nodiscard]] std::size_t index(std::size_t j, std::size_t i, State s) const {
-        // Each cell (j, i) holds three DPCell objects in order: M, I, D.
+        // each cell (j, i) holds three dpcell objects in order: M, I, D.
         // since the state is an enum with number assigned 0, 1, 2 it can be used to access each cell
         return ((j * m_cols) + i) * 3 + static_cast<std::size_t>(s);
     }
-    std::size_t m_rows;    // dont need to acc store this
+    [[maybe_unused]] std::size_t m_rows;    // dont need to acc store this
     std::size_t m_cols;
     std::vector<DPCell> data;
 };
 
-// might use this later
-class Transition {
-public:
-    State from;
-    State to;
-    double score;
-};
-
-//
-// The HMM class stores the model parameters and implements the Viterbi algorithm.
-// The DP table is allocated as one contiguous array via DPMatrix.
-// Note: The emission and transition probabilities here are stored in
-// vectors of unordered_maps. In a real system they would be read from a model file.
-//
 class HMM {
 public:
-    explicit HMM(const std::string& path) {
-        //        this->m_eM.emplace_back(std::pair<char, double>{'k', .1});
-        load(path);
+    explicit HMM(const std::string& path) { load(path); }
+
+    [[nodiscard]] auto viterbi(const std::string& query) -> std::pair<double, std::string> {
+        const std::size_t L = query.size();
+        const std::size_t K = m_nStates;
+
+        // Create a DPMatrix with (K+1) rows and (L+1) columns.
+        DPMatrix dp(K + 1, L + 1);
+
+        // Base case: start at (j=0, i=0) in the Match state with score 0.
+        dp[0, 0, State::M].score = 0.0;
+        dp[0, 0, State::M].prev = nullptr;
+        dp[0, 0, State::M].state = State::M;
+
+        // Fill in the DP table.
+        for (std::size_t j = 0; j <= K; ++j) {    // possible kernel in here to do like 3 at a time
+            for (std::size_t i = 0; i <= L; ++i) {
+
+                // for deletion only j is moving
+                if (j > 0) {
+                    std::size_t prev_j = j - 1;
+                    dp[j, i, State::D] = getBestTrans(dp, prev_j, i, State::D, '-');
+                    // no emission cost to add in
+                }
+
+                // for insertion only i is moving
+                if (i > 0 && j <= K) {
+
+                    std::size_t prev_i = i - 1;
+                    auto thing = getBestTrans(dp, j, prev_i, State::I, std::tolower(query[prev_i]));
+
+                    // Add emission cost for insertion from m_eI[j]
+                    const auto letter = query[prev_i];
+
+                    // will throw if letter doesnt exist, shouldnt happen
+                    thing.score += m_eI[j].find(letter)->second;
+
+                    dp[j, i, State::I] = thing;
+                }
+
+                // for match both i and j move
+                if (j > 0 && i > 0) {
+                    std::size_t prev_j = j - 1;
+                    std::size_t prev_i = i - 1;
+
+                    // idk if i actually have to do toupper here cause query should be in all caps
+                    auto thing = getBestTrans(dp, prev_j, prev_i, State::M, std::toupper(query[prev_i]));
+
+                    // Add emission cost for match from m_eM[j]
+                    const auto letter = query[prev_i];
+
+                    // will throw if letter doesnt exist
+                    thing.score += m_eM[j].find(letter)->second;
+
+                    dp[j, i, State::M] = thing;
+                }
+            }
+        }
+
+        // --- Final transition ---
+
+        // just null termin for aligned char it doesnt matter this is gonna get skipped in backtracking
+        auto last = getBestTrans(dp, K, L, State::M, '\0');
+        if (last.score == NEG_INF || last.prev == nullptr)
+            return {NEG_INF, "$"};
+
+        // just following pointer chain backwards
+        std::string alignment;
+        alignment.resize(L);        // alignment gonna be the same size as the query so pre alloc
+        std::size_t pos = L - 1;    // inserting from end of string to front so no reverse needed
+        for (const DPCell* cell = last.prev; cell->prev != nullptr; cell = cell->prev) {
+            alignment[pos--] = cell->alignedChar;
+        }
+        return {last.score, alignment};
     }
 
+private:
     std::size_t m_nStates{};           // number of match states (K)
-    std::vector<char> m_alphabet{};    // e.g. {"A", "C", "G", "T"}
-    // Emission probabilities for insertions; size: m_nStates+1.
-    std::vector<std::unordered_map<char, double>> m_eI{};
-    // Emission probabilities for match states; size: m_nStates+1 (index 0 may be unused)
-    std::vector<std::unordered_map<char, double>> m_eM{};
-    // Transition probabilities; one unordered_map per row (0..m_nStates).
+    std::vector<char> m_alphabet{};    // ['A', 'C', 'G', 'T']
+    // emission probabilities for insertions; size: m_nStates+1.
+    std::vector<std::unordered_map<char, DefaultDouble>> m_eI{};
+    // emission probabilities for match states; size: m_nStates+1 (index 0 may be unused)
+    std::vector<std::unordered_map<char, DefaultDouble>> m_eM{};
+    // transition probabilities; one unordered_map per row (0..m_nStates).
     // Keys are two-letter strings (e.g. "MI", "II", "DD", etc.).
-    std::vector<std::unordered_map<std::string, BetterDouble>> m_t{};
+    std::vector<std::unordered_map<std::string, DefaultDouble>> m_t{};
 
     void load(const std::string& path) {
         std::ifstream fin(path);
@@ -154,7 +192,7 @@ public:
             }
 
             if (tokens[0] == "HMM") {
-                // read alphabest stream[1:]
+                // read alphabet stream[1:]
                 m_alphabet = std::vector(tokens.begin() + 1, tokens.end()) |
                              std::views::transform([](const auto& s) { return s[0]; }) |
                              std::ranges::to<std::vector<char>>();
@@ -195,7 +233,9 @@ public:
             // read each set of 3 lines at a time
             std::getline(fin, line);
             const auto split_em = split(line);
-            if (std::stod(split_em[0]) != idx) {
+
+            // index better be valid lol
+            if (std::stoull(split_em[0]) != idx) {
                 throw std::runtime_error("Expected state index " + std::to_string(idx) + " but got " + split_em[0]);
             }
 
@@ -216,9 +256,9 @@ public:
         }
     }
 
-    // Given a previous cell (j, i), find the best transition to state 'to'.
-    // Returns the best DPCell for state 'to'.
+    // gets best transition to a state from the previous states in the dp mtx
     // still have to add the emission cost and aligned char bc those are specific to the state
+    // and wont look good in here
     [[nodiscard]] auto getBestTrans(const DPMatrix& dp, std::size_t j, std::size_t i, State to, char alignedChar)
         -> DPCell {
         constexpr std::array<State, 3> states{State::M, State::I, State::D};
@@ -228,7 +268,7 @@ public:
         bestCell.alignedChar = alignedChar;
 
         for (const State s : states) {
-            const auto& prevCell = dp(j, i, s);
+            const auto& prevCell = dp[j, i, s];
             const auto transKey = prevCell.getTransToKey(to);
 
             double candidate = prevCell.score + m_t[j][transKey];
@@ -240,90 +280,43 @@ public:
 
         return bestCell;
     }
-
-    // Viterbi returns a pair: best log-score and an alignment string.
-    // In the alignment string, uppercase letters are matches, lowercase letters are insertions, and '-' is a
-    // deletion.
-    [[nodiscard]] auto viterbi(std::string_view query) -> std::pair<double, std::string> {
-        const std::size_t L = query.size();
-        const std::size_t K = m_nStates;
-
-        // Create a DPMatrix with (K+1) rows and (L+1) columns.
-        DPMatrix dp(K + 1, L + 1);
-
-        // Base case: start at (j=0, i=0) in the Match state with score 0.
-        dp(0, 0, State::M).score = 0.0;
-        dp(0, 0, State::M).prev = nullptr;
-        dp(0, 0, State::M).state = State::M;
-
-        // Fill in the DP table.
-        for (std::size_t j = 0; j <= K; ++j) {    // possible kernel in here to do like 3 at a time
-            for (std::size_t i = 0; i <= L; ++i) {
-
-                // --- Deletion (D) ---
-                // Deletion: move from (j-1, i) to (j, i) without consuming a query char.
-                if (j > 0) {
-                    std::size_t prev_j = j - 1;
-                    dp(j, i, State::D) = getBestTrans(dp, prev_j, i, State::D, '-');
-                    // no emission cost to add in
-                }
-
-                // --- Insertion (I) ---
-                // Insertion: move from (j, i-1) to (j, i) while consuming one query character.
-                if (i > 0 && j <= K) {
-
-                    std::size_t prev_i = i - 1;
-                    auto thing = getBestTrans(dp, j, prev_i, State::I, std::tolower(query[prev_i]));
-
-                    // Add emission cost for insertion from m_eI[j]
-                    const auto letter = query[prev_i];
-
-                    // will throw if letter doesnt exist, shouldnt happen
-                    thing.score += m_eI[j].find(letter)->second;
-
-                    dp(j, i, State::I) = thing;
-                }
-
-                // --- Match (M) ---
-                // Match: move from (j-1, i-1) to (j, i) while consuming one query character.
-                if (j > 0 && i > 0) {
-                    std::size_t prev_j = j - 1;
-                    std::size_t prev_i = i - 1;
-
-                    // idk if i actually have to do toupper here cause query should be in all caps
-                    auto thing = getBestTrans(dp, prev_j, prev_i, State::M, std::toupper(query[prev_i]));
-
-                    // Add emission cost for match from m_eM[j]
-                    const auto letter = query[prev_i];
-
-                    // will throw if letter doesnt exist
-                    thing.score += m_eM[j].find(letter)->second;
-
-                    dp(j, i, State::M) = thing;
-                }
-            }
-        }
-
-        // --- Final transition ---
-
-        // just null termin for aligned char it doesnt matter this is gonna get skipped in backtracking
-        auto last = getBestTrans(dp, K, L, State::M, '\0');
-        if (last.score == NEG_INF || last.prev == nullptr)
-            return {NEG_INF, "$"};
-
-        // just following pointer chain backwards
-        std::string alignment;
-        alignment.resize(L);        // alignment gonna be the same size as the query so pre alloc
-        std::size_t pos = L - 1;    // inserting from end of string to front so no reverse needed
-        for (const DPCell* cell = last.prev; cell->prev != nullptr; cell = cell->prev) {
-            alignment[pos--] = cell->alignedChar;
-        }
-        return {last.score, alignment};
-    }
 };
 
-int main() {
+int main(int argc, const char* argv[]) {
+/*
 
+    argparse::ArgumentParser program("profile_hmm_cpp");
+    program.add_argument("-m", "--model").required().help("HMM model file path");
+    program.add_argument("-q", "--query").required().help("Query FASTA file path");
+    program.add_argument("-o", "--output")
+        .default_value(std::string("stdout"))
+        .help("Output file path (stdout or a filename)");
+
+    try {
+        program.parse_args(argc, argv);
+    } catch (const std::runtime_error& err) {
+        std::cerr << err.what() << std::endl;
+        std::cerr << program;
+        return 1;
+    }
+
+    const auto queryFile = program.get<std::string>("--query");
+    const auto outputFile = program.get<std::string>("--output");
+    const auto modelFile = program.get<std::string>("--model");
+
+    // Create and load the HMM.
+    HMM hmm(modelFile);
+
+    // Open the FASTA query file.
+    std::ifstream ifs(queryFile);
+    if (!ifs) {
+        std::cerr << "Unable to open query file: " << queryFile << std::endl;
+        return 1;
+    }
+
+    auto queries = read_FASTA(ifs);
+
+*/
     HMM hmm1("../examples/test3/model.hmm");
 
     // Example query sequence.
