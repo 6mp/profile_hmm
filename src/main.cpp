@@ -48,9 +48,13 @@ struct DPCell {
 // next state its easy to look back since its all contiguous
 // [m_0, i_0, d_0, m_1, i_1, d_1, m_2, i_2, d_2, ...]
 
-// if it wasnt 1d it would look like this where each row is a state
-// [[m_0, m_1, m_2, ... m_j], [i_0, i_1, i_2, ... i_j], [d_0, d_1, d_2, ... d_j]]
-
+// if it wasnt 1d it would look like this where each cell is a vm, vi, vd in one
+// [
+//    [vx_0_0, vx_0_1, vx_0_2, ...],
+//    [vx_1_0, vx_1_1, vx_1_2, ...],
+//    [vx_2_0, vx_2_1, vx_2_2, ...],
+//    ...
+// ]
 
 // or could do one matrix for each vm vi vd
 class DPMatrix {
