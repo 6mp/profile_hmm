@@ -6,6 +6,7 @@
 #include <ranges>
 #include <unordered_map>
 #include <vector>
+#include <unordered_set>
 #include <sstream>
 #include <argparse/argparse.hpp>
 
@@ -150,11 +151,10 @@ public:
 
         // just following pointer chain backwards
         std::string alignment;
-        alignment.resize(L);        // alignment gonna be the same size as the query so pre alloc
-        std::size_t pos = L - 1;    // inserting from end of string to front so no reverse needed
         for (const DPCell* cell = last.prev; cell->prev != nullptr; cell = cell->prev) {
-            alignment[pos--] = cell->alignedChar;
+            alignment.push_back(cell->alignedChar);
         }
+        std::ranges::reverse(alignment);    // reverse the alignment string to get the correct order
         return {last.score, alignment};
     }
 
@@ -289,43 +289,57 @@ private:
     }
 };
 
-auto readFasta(const std::string& path) {
-    std::ifstream fin(path);
-    if (!fin) {
-        throw std::runtime_error("Unable to open file: " + path);
+std::vector<std::pair<std::string, std::string>> readFasta(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file) {
+        throw std::runtime_error("Cannot open file: " + filename);
     }
-    std::unordered_map<std::string, std::string> seqs;
-    std::string line;
-    std::string name;
-    std::string seq;
 
-    while (std::getline(fin, line)) {
-        if (line.empty()) {
-            continue;
-        }
-        if (line[0] == '>') {
-            if (!name.empty()) {
-                seqs[name] = seq;
+    std::vector<std::pair<std::string, std::string>> sequences;
+    std::unordered_set<std::string> seen_ids;
+    std::string line, current_id, current_seq;
+
+    auto process_current = [&]() {
+        if (!current_id.empty()) {
+            if (current_seq.empty()) {
+                throw std::runtime_error("Malformed FASTA: Empty sequence for ID " + current_id);
             }
-            name = line.substr(1);
-            seq.clear();
+            if (seen_ids.count(current_id)) {
+                throw std::runtime_error("Duplicate sequence ID: " + current_id);
+            }
+            seen_ids.insert(current_id);
+            sequences.emplace_back(current_id, current_seq);
+            current_seq.clear();
+        }
+    };
+
+    while (std::getline(file, line)) {
+        //        line = trim(line); // Assume trim function exists as previously defined
+        if (line.empty())
+            continue;
+
+        if (line[0] == '>') {
+            process_current();
+            current_id = line.substr(1);
         } else {
-            seq += line;
+            current_seq += line;
         }
     }
 
-    if (!name.empty()) {
-        seqs[name] = seq;
+    process_current();    // Add the last sequence
+
+    if (sequences.empty()) {
+        throw std::runtime_error("Malformed FASTA: No sequences found");
     }
 
-    return seqs;
+    return sequences;
 }
 
 int main(int argc, const char* argv[]) {
 
-    readFasta("../examples/test1/queries.fas");
+    //    readFasta("../examples/test1/queries.fas");
 
-    return 0;
+    //    return 0;
 
     argparse::ArgumentParser program("profile_hmm_cpp");
     program.add_argument("-m", "--model").required().help("HMM model file path");
@@ -350,19 +364,22 @@ int main(int argc, const char* argv[]) {
     HMM hmm(modelFile);
 
     // Open the FASTA query file.
-    std::ifstream ifs(queryFile);
-    if (!ifs) {
-        std::cerr << "Unable to open query file: " << queryFile << std::endl;
-        return 1;
+    auto queries = readFasta(queryFile);
+
+    if (outputFile == "stdout") {
+        for (const auto& [name, query] : queries) {
+            auto [score, alignment] = hmm.viterbi(query);
+            std::cout << name << " " << std::fixed << std::setprecision(5) << score << " " << alignment << "\n";
+        }
+    } else {
+        std::ofstream fout(outputFile);
+        if (!fout) {
+            std::cerr << "Unable to open output file: " << outputFile << std::endl;
+            return 1;
+        }
+        for (const auto& [name, query] : queries) {
+            auto [score, alignment] = hmm.viterbi(query);
+            fout << name << " " << std::fixed << std::setprecision(3) << score << " " << alignment << "\n";
+        }
     }
-
-//    auto queries = read_FASTA(ifs);
-
-    HMM hmm1("../examples/test3/model.hmm");
-
-    // Example query sequence.
-    std::string query = "ACGTACG";
-    auto [score, alignment] = hmm1.viterbi(query);
-    std::cout << "Score: " << score << '\n';
-    std::cout << "Alignment: " << alignment << '\n';
 }
