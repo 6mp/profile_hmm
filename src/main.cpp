@@ -46,7 +46,7 @@ struct DPCell {
 
 // memory layout for cache, reason why is to compute the
 // next state its easy to look back since its all contiguous
-// [m_0, i_0, d_0, m_1, i_1, d_1, m_2, i_2, d_2, ...]
+// [m_0_0, i_0_0, d_0_0, m_0_1, i_0_1, d_0_1, ...]
 
 // if it wasnt 1d it would look like this where each cell is a vm, vi, vd in one
 // [
@@ -55,6 +55,9 @@ struct DPCell {
 //    [vx_2_0, vx_2_1, vx_2_2, ...],
 //    ...
 // ]
+
+// so a vm[j][i] would be at index (j * m_cols) + i in the 1d one then to account for the 3 in one add on the enum val
+
 
 // or could do one matrix for each vm vi vd
 class DPMatrix {
@@ -89,15 +92,14 @@ public:
         const std::size_t L = query.size();
         const std::size_t K = m_nStates;
 
-        // Create a DPMatrix with (K+1) rows and (L+1) columns.
         DPMatrix dp(K + 1, L + 1);
 
-        // Base case: start at (j=0, i=0) in the Match state with score 0.
+        // base case vm[0][0] = 0
         dp[0, 0, State::M].score = 0.0;
         dp[0, 0, State::M].prev = nullptr;
         dp[0, 0, State::M].state = State::M;
 
-        // Fill in the DP table.
+        // fill in the DP table.
         for (std::size_t j = 0; j <= K; ++j) {    // possible kernel in here to do like 3 at a time
             for (std::size_t i = 0; i <= L; ++i) {
 
@@ -142,7 +144,6 @@ public:
             }
         }
 
-        // --- Final transition ---
 
         // just null termin for aligned char it doesnt matter this is gonna get skipped in backtracking
         auto last = getBestTrans(dp, K, L, State::M, '\0');
