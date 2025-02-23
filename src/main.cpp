@@ -36,10 +36,10 @@ struct DPCell {
     char alignedChar = '\0';    // char for building alignment string
 
     [[nodiscard]] auto getTransToKey(State to) const -> std::string {
-        return {state_to_symbol(state), state_to_symbol(to)};
+        return {stateToSymbol(state), stateToSymbol(to)};
     }
 
-    static constexpr auto state_to_symbol(State s) -> char {
+    static constexpr auto stateToSymbol(State s) -> char {
         return (s == State::M) ? 'M' : (s == State::I) ? 'I' : 'D';
     };
 };
@@ -49,7 +49,7 @@ struct DPCell {
 // [m_0, i_0, d_0, m_1, i_1, d_1, m_2, i_2, d_2, ...]
 
 // if it wasnt 1d it would look like this where each row is a state
-
+// [[m_0, m_1, m_2, ... m_j], [i_0, i_1, i_2, ... i_j], [d_0, d_1, d_2, ... d_j]]
 
 
 // or could do one matrix for each vm vi vd
@@ -70,7 +70,7 @@ private:
     [[nodiscard]] std::size_t index(std::size_t j, std::size_t i, State s) const {
         // each cell (j, i) holds three dpcell objects in order: M, I, D.
         // since the state is an enum with number assigned 0, 1, 2 it can be used to access each cell
-        return ((j * m_cols) + i) * 3 + static_cast<std::size_t>(s);
+        return ((j * m_cols) + i) * 3 + std::to_underlying(s);
     }
     [[maybe_unused]] std::size_t m_rows;    // dont need to acc store this
     std::size_t m_cols;
@@ -267,22 +267,22 @@ private:
         -> DPCell {
         constexpr std::array<State, 3> states{State::M, State::I, State::D};
 
-        DPCell bestCell;
-        bestCell.state = to;
-        bestCell.alignedChar = alignedChar;
+        DPCell best_cell;
+        best_cell.state = to;
+        best_cell.alignedChar = alignedChar;
 
         for (const State s : states) {
             const auto& prevCell = dp[j, i, s];
             const auto transKey = prevCell.getTransToKey(to);
 
             double candidate = prevCell.score + m_t[j][transKey];
-            if (candidate > bestCell.score) {
-                bestCell.score = candidate;
-                bestCell.prev = &prevCell;
+            if (candidate > best_cell.score) {
+                best_cell.score = candidate;
+                best_cell.prev = &prevCell;
             }
         }
 
-        return bestCell;
+        return best_cell;
     }
 };
 
