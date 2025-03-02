@@ -8,7 +8,10 @@
 #include <vector>
 #include <unordered_set>
 #include <sstream>
-#include <argparse/argparse.hpp>
+#include <algorithm>
+#include <utility>
+#include <iomanip>
+// #include <argparse/argparse.hpp>
 
 // https://en.cppreference.com/w/
 
@@ -163,10 +166,10 @@ private:
     std::vector<char> m_alphabet{};    // ['A', 'C', 'G', 'T']
     // emission probabilities for insertions; size: m_nStates+1.
     std::vector<std::unordered_map<char, DefaultDouble>> m_eI{};
-    // emission probabilities for match states; size: m_nStates+1 (index 0 may be unused)
+    // emission probabilities for match states
     std::vector<std::unordered_map<char, DefaultDouble>> m_eM{};
-    // transition probabilities; one unordered_map per row (0..m_nStates).
-    // Keys are two-letter strings (e.g. "MI", "II", "DD", etc.).
+    // transition probabilities
+    // keys are two-letter strings (e.g. "MI", "II", "DD", etc.).
     std::vector<std::unordered_map<std::string, DefaultDouble>> m_t{};
 
     void load(const std::string& path) {
@@ -292,7 +295,7 @@ private:
 std::vector<std::pair<std::string, std::string>> readFasta(const std::string& filename) {
     std::ifstream file(filename);
     if (!file) {
-        throw std::runtime_error("Cannot open file: " + filename);
+        throw std::runtime_error("cannot open file: " + filename);
     }
 
     std::vector<std::pair<std::string, std::string>> sequences;
@@ -302,10 +305,10 @@ std::vector<std::pair<std::string, std::string>> readFasta(const std::string& fi
     auto process_current = [&]() {
         if (!current_id.empty()) {
             if (current_seq.empty()) {
-                throw std::runtime_error("Malformed FASTA: Empty sequence for ID " + current_id);
+                throw std::runtime_error("empty sequence for ID " + current_id);
             }
             if (seen_ids.count(current_id)) {
-                throw std::runtime_error("Duplicate sequence ID: " + current_id);
+                throw std::runtime_error("duplicate sequence ID: " + current_id);
             }
             seen_ids.insert(current_id);
             sequences.emplace_back(current_id, current_seq);
@@ -328,12 +331,11 @@ std::vector<std::pair<std::string, std::string>> readFasta(const std::string& fi
     process_current();
 
     if (sequences.empty()) {
-        throw std::runtime_error("Malformed FASTA: No sequences found");
+        throw std::runtime_error("no sequences found");
     }
 
     return sequences;
 }
-
 
 // round like python
 std::string truncate_zeros(double num, int precision) {
@@ -348,29 +350,12 @@ std::string truncate_zeros(double num, int precision) {
 }
 
 int main(int argc, const char* argv[]) {
-    argparse::ArgumentParser program("profile_hmm_cpp");
-    program.add_argument("-m", "--model").required().help("HMM model file path");
-    program.add_argument("-q", "--query").required().help("Query FASTA file path");
-    program.add_argument("-o", "--output")
-        .default_value(std::string("stdout"))
-        .help("Output file path (stdout or a filename)");
+    const char* modelFile = argv[1];
+    const char* queryFile = argv[2];
+    const char* outputFile = (argc > 3) ? argv[3] : "stdout";
 
-    try {
-        program.parse_args(argc, argv);
-    } catch (const std::runtime_error& err) {
-        std::cerr << err.what() << std::endl;
-        std::cerr << program;
-        return 1;
-    }
-
-    const auto queryFile = program.get<std::string>("--query");
-    const auto outputFile = program.get<std::string>("--output");
-    const auto modelFile = program.get<std::string>("--model");
-
-    // create and load the HMM.
     HMM hmm(modelFile);
 
-    // open the FASTA query file.
     auto queries = readFasta(queryFile);
 
     if (outputFile == "stdout") {

@@ -10,3 +10,4 @@ pip3 install -r /autograder/source/requirements.txt
 cd /autograder/source
 meson setup builddir && cd builddir
 meson compile
+cp /autograder/source/builddir/profile_hmm /autograder/source/profile_hmm
