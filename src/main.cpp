@@ -338,7 +338,7 @@ std::vector<std::pair<std::string, std::string>> readFasta(const std::string& fi
 }
 
 // round like python
-std::string truncate_zeros(double num, int precision) {
+std::string truncateZeros(double num, int precision) {
     std::stringstream ss;
     ss << std::fixed << std::setprecision(precision) << num;
     std::string s = ss.str();
@@ -371,7 +371,7 @@ int main(int argc, const char* argv[]) {
         }
         for (const auto& [name, query] : queries) {
             auto [score, alignment] = hmm.viterbi(query);
-            fout << name << " " << truncate_zeros(score, 5) << " " << alignment << "\n";
+            fout << name << " " << truncateZeros(score, 5) << " " << alignment << "\n";
         }
     }
 }
